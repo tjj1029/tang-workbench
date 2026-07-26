@@ -1536,9 +1536,9 @@ window.addEventListener('focus',checkDueTasks);
 // 安装 PWA 提示
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.deferredPrompt=e;showAlertBar('<i class="fa-solid fa-mobile-screen"></i> 可安装到手机桌面，像App一样使用～ <button class="btn sm" style="margin-left:8px" onclick="installPWA()">安装</button>')});
 function installPWA(){if(window.deferredPrompt){window.deferredPrompt.prompt();window.deferredPrompt.userChoice.then(()=>window.deferredPrompt=null);$('alertBar').style.display='none'}}
-// Service Worker (仅同源部署时生效，CDN下不影响功能)
-if('serviceWorker'in navigator&&location.protocol==='https:'&&location.hostname.includes('github.io')){
-  navigator.serviceWorker.register('sw.js').then(()=>console.log('SW ok')).catch(()=>{});
+// 注册 Service Worker
+if('serviceWorker'in navigator){
+  navigator.serviceWorker.register('sw.js').then(()=>console.log('SW registered')).catch(err=>console.log('SW error',err));
 }
 </script>
 </body>
