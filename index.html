@@ -1655,9 +1655,26 @@ setTimeout(()=>{
 // 安装 PWA 提示
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.deferredPrompt=e;showAlertBar('<i class="fa-solid fa-mobile-screen"></i> 可安装到手机桌面，像App一样使用～ <button class="btn sm" style="margin-left:8px" onclick="installPWA()">安装</button>')});
 function installPWA(){if(window.deferredPrompt){window.deferredPrompt.prompt();window.deferredPrompt.userChoice.then(()=>window.deferredPrompt=null);$('alertBar').style.display='none'}}
-// Service Worker (仅同源部署时生效，CDN下不影响功能)
-if('serviceWorker'in navigator&&location.protocol==='https:'&&location.hostname.includes('github.io')){
-  navigator.serviceWorker.register('sw.js').then(()=>console.log('SW ok')).catch(()=>{});
+// Service Worker - 内联方式，支持任意域名离线缓存
+if('serviceWorker'in navigator&&location.protocol==='https:'){
+  const swCode=`
+    const CACHE='tang-v5';
+    self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./','./index.html'])).catch(()=>{}));self.skipWaiting()});
+    self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
+    self.addEventListener('fetch',e=>{
+      if(e.request.method!=='GET')return;
+      const url=new URL(e.request.url);
+      if(url.origin!==location.origin){
+        e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));return;
+      }
+      e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request).then(r=>{const cp=r.clone();caches.open(CACHE).then(c=>c.put(e.request,cp));return r}).catch(()=>caches.match('./index.html'))));
+    });
+  `;
+  try{
+    const blob=new Blob([swCode],{type:'text/javascript'});
+    const swUrl=URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl).then(()=>console.log('SW已注册，支持离线')).catch(()=>{});
+  }catch(e){}
 }
 </script>
 </body>
