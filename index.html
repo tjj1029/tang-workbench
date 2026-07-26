@@ -223,6 +223,11 @@ textarea{resize:vertical;min-height:60px}
     <div class="mini" id="dashMini"></div>
   </div>
 
+  <div class="card" id="dailyCheckinCard" style="padding:14px 18px;margin-bottom:16px">
+    <h3 style="font-size:14px;margin-bottom:10px"><i class="fa-solid fa-bell" style="color:var(--accent-deep)"></i> 今日打卡提醒 <span class="tip" id="checkinTip"></span></h3>
+    <div id="dailyCheckinList" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+
   <div class="tabs">
     <button class="tab active" data-tab="plan"><i class="fa-solid fa-check-circle"></i> 计划</button>
     <button class="tab" data-tab="money"><i class="fa-solid fa-coins"></i> 记账</button>
@@ -509,6 +514,68 @@ function renderDash(){
   const pInfo=getPeriodInfo();
   const pTag=pInfo?'<span><i class="fa-solid fa-heart-pulse" style="color:var(--red)"></i> '+pInfo.phaseName+' <b>Day '+pInfo.day+'</b></span>':'';
   $('dashMini').innerHTML=`<span><i class="fa-solid fa-coins"></i> 今日记账 <b>${m}</b> 笔</span><span><i class="fa-solid fa-dumbbell"></i> 今日运动 <b>${fMin}</b> 分钟</span><span><i class="fa-solid fa-book-open"></i> 今日学词 <b>${w}</b> 个</span><span><i class="fa-solid fa-microphone-lines"></i> 英语 <b>${engToday}/4</b></span><span><i class="fa-solid fa-utensils"></i> 饮食 <b>${foodCal}</b> 千卡</span><span><i class="fa-solid fa-clock"></i> <b>${D.pomo.date===t?D.pomo.count:0}</b> 番茄</span>${pTag}`;
+  renderDailyCheckin();
+}
+
+/* ============ 统一打卡提醒 ============ */
+function getDailyCheckins(){
+  const t=today();
+  // 健身打卡：三个计划各打卡一次
+  const fitPlans=['wing','pelvis','fat'];
+  const fitChecks=fitPlans.map(p=>({
+    id:'fit_'+p,
+    name:{wing:'翼状肩胛',pelvis:'骨盆前倾',fat:'减脂运动'}[p],
+    cat:'健身',
+    done:D.fit.some(x=>x.date.slice(0,10)===t&&x.plan===p),
+    icon:'fa-dumbbell',
+    tab:'fit'
+  }));
+  // 英语打卡：听说读写四技能
+  const engSkills=[{k:'listen',n:'听力'},{k:'speak',n:'口语'},{k:'read',n:'阅读'},{k:'write',n:'写作'}];
+  const engChecks=engSkills.map(s=>({
+    id:'eng_'+s.k,
+    name:s.n+'练习',
+    cat:'英语',
+    done:D.engLog[s.k]&&D.engLog[s.k][t],
+    icon:'fa-book-open',
+    tab:'eng'
+  }));
+  // 英语每日计划任务
+  const planDone=D.engLog.plan&&D.engLog.plan[t]?D.engLog.plan[t]:[];
+  const engPlanCheck={id:'eng_plan',name:'每日计划',cat:'英语',done:planDone.length>=4,icon:'fa-calendar-day',tab:'eng'};
+  return [...fitChecks,...engChecks,engPlanCheck];
+}
+function renderDailyCheckin(){
+  const checks=getDailyCheckins();
+  const done=checks.filter(c=>c.done).length;
+  const total=checks.length;
+  const undone=total-done;
+  $('checkinTip').textContent=undone>0?`还有 ${undone} 项未完成`:'全部完成 🎉';
+  $('dailyCheckinList').innerHTML=checks.map(c=>{
+    const cls=c.done?'':'warn';
+    const bg=c.done?'var(--green-soft)':'var(--red-soft)';
+    const color=c.done?'#5E7D5B':'#B05656';
+    return `<div onclick="goToTab('${c.tab}')" style="cursor:pointer;background:${bg};color:${color};padding:6px 12px;border-radius:10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px">
+      <i class="fa-solid ${c.icon}"></i> ${c.name} ${c.done?'<i class="fa-solid fa-check"></i>':'<i class="fa-solid fa-circle-exclamation"></i>'}
+    </div>`;
+  }).join('');
+  // 如果有未完成的，且时间已晚(20点后)，显示提醒
+  const hour=new Date().getHours();
+  if(undone>0&&hour>=20){
+    showAlertBar('<i class="fa-solid fa-bell"></i> 今天还有 '+undone+' 项打卡未完成：'+checks.filter(c=>!c.done).map(c=>c.name).join('、')+'，加油！');
+  }
+}
+function goToTab(tab){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  const tabBtn=document.querySelector('[data-tab="'+tab+'"]');
+  if(tabBtn)tabBtn.classList.add('active');
+  $('panel-'+tab).classList.add('active');
+  if(tab==='money')renderMoney();
+  if(tab==='fit')renderFit();
+  if(tab==='eng')renderEng();
+  if(tab==='food')renderFood();
+  if(tab==='period')renderPeriod();
 }
 
 /* ============ 每日计划 ============ */
@@ -1217,6 +1284,34 @@ function engUnlog(skill){
   const t=today();
   if(D.engLog[skill]&&D.engLog[skill][t]){delete D.engLog[skill][t];save('engLog',D.engLog)}
 }
+/* 英语App跳转配置 */
+const APP_LINKS={
+  '墨墨背单词':{scheme:'maimemo://',web:'https://www.maimemo.com/',icon:'fa-solid fa-book'},
+  '不背单词':{scheme:'bbdc://',web:'https://www.bbdc.cn/',icon:'fa-solid fa-spell-check'},
+  '每日英语听力':{scheme:'eudic://ting/',web:'https://dict.eudic.net/ting/',icon:'fa-solid fa-headphones'},
+  '流利说英语':{scheme:'liulishuo://',web:'https://www.liulishuo.com/',icon:'fa-solid fa-microphone'},
+  '工作台听写':{scheme:'#dict',web:'#dict',icon:'fa-solid fa-keyboard'},
+  '工作台口语':{scheme:'#speak',web:'#speak',icon:'fa-solid fa-microphone'},
+  '工作台阅读':{scheme:'#read',web:'#read',icon:'fa-solid fa-book'},
+  '工作台写作':{scheme:'#write',web:'#write',icon:'fa-solid fa-pen-nib'},
+  '休息调整':{scheme:null,web:null,icon:'fa-solid fa-mug-hot'}
+};
+function appLinkHTML(appName){
+  const a=APP_LINKS[appName];
+  if(!a||!a.web)return '';
+  if(a.web.startsWith('#')){
+    const tab=a.web.slice(1);
+    return ` <button class="btn ghost tiny" onclick="jumpToEng('${tab}')" style="margin-left:6px"><i class="fa-solid fa-arrow-right"></i> 去练习</button>`;
+  }
+  return ` <a href="${a.scheme}" onclick="setTimeout(()=>{window.open('${a.web}','_blank')},300)" class="btn ghost tiny" style="text-decoration:none;margin-left:6px"><i class="${a.icon}"></i> 打开App</a>`;
+}
+function jumpToEng(skill){
+  curEng=skill;
+  document.querySelectorAll('.eng-tab').forEach(x=>x.classList.remove('active'));
+  const tab=document.querySelector('[data-e="'+skill+'"]');
+  if(tab)tab.classList.add('active');
+  renderEng();
+}
 /* 每日学习计划 - 结合四款App，三阶段备考 */
 const STUDY_PLAN={
   phases:[
@@ -1309,10 +1404,11 @@ function renderEngPlan(){
       ${todayPlan.tasks.map((task,i)=>{
         const taskId='plan_'+dayIdx+'_'+i;
         const done=tasksDone.includes(taskId);
-        return `<div class="item ${done?'task-done':''}">
+        const link=appLinkHTML(task.app);
+        return `<div class="item ${done?'task-done':''}" style="flex-wrap:wrap">
           <div class="check ${done?'on':''}" onclick="togglePlanTask('${taskId}')" style="cursor:pointer"></div>
           <div class="main">
-            <div class="t"><span class="tag ${task.skill==='词汇'?'p-mid':task.skill==='口语'?'p-high':task.skill==='听力'?'p-low':'p-mid'}">${task.app}</span> ${task.task}</div>
+            <div class="t"><span class="tag ${task.skill==='词汇'?'p-mid':task.skill==='口语'?'p-high':task.skill==='听力'?'p-low':'p-mid'}">${task.app}</span> ${task.task}${link}</div>
             <div class="s"><i class="fa-solid fa-clock"></i> ${task.time} · ${task.skill} ${task.tip?'· 💡 '+task.tip:''}</div>
           </div>
         </div>`;
@@ -1533,6 +1629,29 @@ if('Notification'in window&&Notification.permission==='default'){Notification.re
 checkDueTasks();
 setInterval(checkDueTasks,30000);
 window.addEventListener('focus',checkDueTasks);
+// 每小时检查一次打卡完成情况，晚上8-10点提醒
+setInterval(()=>{
+  const hour=new Date().getHours();
+  if(hour>=20&&hour<=22){
+    const checks=getDailyCheckins();
+    const undone=checks.filter(c=>!c.done);
+    if(undone.length){
+      const names=undone.map(c=>c.name).join('、');
+      if('Notification'in window&&Notification.permission==='granted'){
+        new Notification('⏰ 打卡提醒',{body:'还有 '+undone.length+' 项未完成：'+names});
+      }
+    }
+  }
+},3600000);
+// 页面打开时也检查一次
+setTimeout(()=>{
+  const hour=new Date().getHours();
+  if(hour>=20){
+    const checks=getDailyCheckins();
+    const undone=checks.filter(c=>!c.done);
+    if(undone.length)renderDailyCheckin();
+  }
+},2000);
 // 安装 PWA 提示
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();window.deferredPrompt=e;showAlertBar('<i class="fa-solid fa-mobile-screen"></i> 可安装到手机桌面，像App一样使用～ <button class="btn sm" style="margin-left:8px" onclick="installPWA()">安装</button>')});
 function installPWA(){if(window.deferredPrompt){window.deferredPrompt.prompt();window.deferredPrompt.userChoice.then(()=>window.deferredPrompt=null);$('alertBar').style.display='none'}}
